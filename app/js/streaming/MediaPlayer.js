@@ -46,6 +46,8 @@ MediaPlayer = function (aContext) {
         system,
         element,
         source,
+        manifestXml,
+        manifestXmlBaseUrl,
         streamController,
         videoModel,
         initialized = false,
@@ -55,7 +57,7 @@ MediaPlayer = function (aContext) {
         bufferMax = MediaPlayer.dependencies.BufferExtensions.BUFFER_SIZE_REQUIRED,
 
         isReady = function () {
-            return (!!element && !!source);
+            return (!!element && (!!source || !!manifestXml));
         },
 
         play = function () {
@@ -68,7 +70,7 @@ MediaPlayer = function (aContext) {
                 return;
             }
 
-            if (!element || !source) {
+            if (!element || !(source || manifestXml)) {
                 throw "Missing view or source.";
             }
 
@@ -77,7 +79,18 @@ MediaPlayer = function (aContext) {
             streamController = system.getObject("streamController");
             streamController.setVideoModel(videoModel);
             streamController.setAutoPlay(autoPlay);
-            streamController.load(source);
+
+            if (manifestXml) {
+                streamController.manifestLoader.parser.parse(manifestXml, manifestXmlBaseUrl).then(
+                    function (manifest) {
+                        manifest.mpdLoadedTime = new Date();
+                        streamController.manifestLoader.metricsModel.addManifestUpdate("stream", manifest.type, 0,0, manifest.availabilityStartTime);
+                        streamController.manifestModel.setValue(manifest);
+                        streamController.manifestUpdater.start();
+                    });
+            } else {
+                streamController.load(source);
+            }
 
             system.mapValue("scheduleWhilePaused", scheduleWhilePaused);
             system.mapOutlet("scheduleWhilePaused", "stream");
@@ -313,6 +326,15 @@ MediaPlayer = function (aContext) {
             }
 
             source = this.uriQueryFragModel.parseURI(url);
+            this._postAttach();
+        },
+
+        attachManifest: function (xml, baseUrl) {
+            manifestXml = xml;
+            manifestXmlBaseUrl = baseUrl;
+            this._postAttach();
+        },
+        _postAttach:function(){
             this.setQualityFor('video', 0);
             this.setQualityFor('audio', 0);
 
